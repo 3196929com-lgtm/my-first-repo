@@ -1,0 +1,415 @@
+<title>网名生成器</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+  /* Cute, playful nickname generator — rounded shapes, soft pastels, bouncy interactions */
+  :root {
+    --bg: #FFF5F9;
+    --surface: #FFFFFF;
+    --fg: #4A3347;
+    --fg-muted: #9A7B93;
+    --accent: #FF7EB3;
+    --accent-hover: #FF5FA0;
+    --pink-light: #FFE0EE;
+    --lavender: #E8DEFF;
+    --mint: #D4F5E9;
+    --peach: #FFE5D4;
+    --sky: #D4EDFF;
+    --lemon: #FFF8D4;
+    --radius: 20px;
+    --radius-sm: 12px;
+    --font-display: 'ZCOOL KuaiLe', cursive;
+    --font-body: 'Noto Sans SC', system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #2A1F28;
+      --surface: #3A2D38;
+      --fg: #F5E6F0;
+      --fg-muted: #B8A0B2;
+      --accent: #FF7EB3;
+      --accent-hover: #FF9DC5;
+      --pink-light: #4A2D3E;
+      --lavender: #3A2D4A;
+      --mint: #2A3D32;
+      --peach: #4A3328;
+      --sky: #2A3340;
+      --lemon: #3D3A28;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #2A1F28;
+    --surface: #3A2D38;
+    --fg: #F5E6F0;
+    --fg-muted: #B8A0B2;
+    --accent: #FF7EB3;
+    --accent-hover: #FF9DC5;
+    --pink-light: #4A2D3E;
+    --lavender: #3A2D4A;
+    --mint: #2A3D32;
+    --peach: #4A3328;
+    --sky: #2A3340;
+    --lemon: #3D3A28;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    padding-inline: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+  }
+
+  .page {
+    max-width: 520px;
+    width: 100%;
+    padding-block: 32px 48px;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+
+  .header h1 {
+    font-family: var(--font-display);
+    font-size: 2rem;
+    margin: 0 0 4px;
+    text-wrap: balance;
+  }
+
+  .mascot {
+    font-size: 3rem;
+    line-height: 1;
+    margin-bottom: 8px;
+    display: block;
+    animation: bounce 2s ease-in-out infinite;
+  }
+
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mascot { animation: none; }
+  }
+
+  .header p {
+    color: var(--fg-muted);
+    font-size: 0.9rem;
+    margin: 0;
+  }
+
+  .style-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+
+  .style-btn {
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+    font-weight: 500;
+    border: 2px solid transparent;
+    padding: 10px 6px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    text-align: center;
+    color: var(--fg);
+  }
+  .style-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+  .style-btn:active { transform: translateY(0); }
+  .style-btn[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--pink-light); }
+
+  .style-btn[data-style="古风"] { background: var(--lavender); }
+  .style-btn[data-style="可爱"] { background: var(--pink-light); }
+  .style-btn[data-style="中二"] { background: var(--sky); }
+  .style-btn[data-style="搞笑"] { background: var(--lemon); }
+  .style-btn[data-style="文艺"] { background: var(--mint); }
+
+  .controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 24px;
+    align-items: center;
+  }
+
+  .count-control {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    border: 1px solid var(--pink-light);
+  }
+
+  .count-btn {
+    font-family: var(--font-body);
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: transparent;
+    color: var(--accent);
+    font-size: 1.2rem;
+    cursor: pointer;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .count-btn:hover { background: var(--pink-light); }
+
+  .count-display {
+    width: 36px;
+    text-align: center;
+    font-weight: 500;
+    font-size: 0.95rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .generate-btn {
+    flex: 1;
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    padding: 0 20px;
+    height: 36px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .generate-btn:hover { background: var(--accent-hover); }
+  .generate-btn:active { transform: scale(0.97); }
+
+  .results {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .name-card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    animation: fadeUp 0.3s ease both;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+
+  .name-card:nth-child(1) { animation-delay: 0s; }
+  .name-card:nth-child(2) { animation-delay: 0.05s; }
+  .name-card:nth-child(3) { animation-delay: 0.1s; }
+  .name-card:nth-child(4) { animation-delay: 0.15s; }
+  .name-card:nth-child(5) { animation-delay: 0.2s; }
+  .name-card:nth-child(6) { animation-delay: 0.25s; }
+  .name-card:nth-child(7) { animation-delay: 0.3s; }
+  .name-card:nth-child(8) { animation-delay: 0.35s; }
+  .name-card:nth-child(9) { animation-delay: 0.4s; }
+  .name-card:nth-child(10) { animation-delay: 0.45s; }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .name-card { animation: none; }
+  }
+
+  .name-text {
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    min-width: 0;
+    word-break: break-all;
+  }
+
+  .copy-btn {
+    font-family: var(--font-body);
+    font-size: 0.78rem;
+    padding: 5px 12px;
+    border: 1px solid var(--pink-light);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--fg-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+    flex-shrink: 0;
+  }
+  .copy-btn:hover { background: var(--pink-light); color: var(--fg); }
+  .copy-btn.copied { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--fg-muted);
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+  .empty-state span { font-size: 2rem; display: block; margin-bottom: 8px; }
+</style>
+
+<div class="page">
+  <header class="header">
+    <span class="mascot">₍ᐢ.ˬ.ᐢ₎</span>
+    <h1>网名生成器</h1>
+    <p>选个风格，生成你的专属网名</p>
+  </header>
+
+  <div class="style-grid" id="styleGrid"></div>
+
+  <div class="controls">
+    <div class="count-control">
+      <button class="count-btn" id="countMinus" aria-label="减少数量">−</button>
+      <span class="count-display" id="countDisplay">5</span>
+      <button class="count-btn" id="countPlus" aria-label="增加数量">+</button>
+    </div>
+    <button class="generate-btn" id="generateBtn">生成一波！</button>
+  </div>
+
+  <div class="results" id="results">
+    <div class="empty-state">
+      <span>✨</span>
+      点击上面的风格，再点生成<br>可爱网名马上就来
+    </div>
+  </div>
+</div>
+
+<script>
+const STYLES = {
+  "古风": {
+    emoji: "🏮",
+    prefixes: ["墨","云","雪","风","月","竹","梅","兰","霜","烟","雨","花","柳","松","鹤"],
+    suffixes: ["落","归","隐","吟","眠","醉","舞","笑","行","歌","梦","影","寒","染","渡"],
+    patterns: ["{p}中{s}","{p}{s}人","一{p}{s}","{p}里{s}","半{p}半{s}","{p}{p2}{s}","听{p}{s}","{p}下{s}","独{s}{p}","无{p}不{s}"]
+  },
+  "可爱": {
+    emoji: "🐱",
+    prefixes: ["小","奶","甜","软","萌","糖","棉","泡","果","蜜"],
+    suffixes: ["兔","猫","熊","鹿","团","包","糖","酱","丸","桃"],
+    patterns: ["{p}{s}","{p}{p2}{s}","一只{p}{s}","{p}{s}子","爱吃{s}的{p}{s2}","{s}{s2}不是{s}","今天也是{p}{s}","{p}味{s}","超级{p}{s}","{p}{s}呀"]
+  },
+  "中二": {
+    emoji: "⚔️",
+    prefixes: ["暗","黑","血","影","焰","魔","灵","幻","冥","绝"],
+    suffixes: ["刃","魂","翼","瞳","夜","狼","龙","帝","神","王"],
+    patterns: ["{p}{s}之主","被封印的{p}{s}","{p}之{s}","最后的{p}{s}","第七{p}{s}","{p}{s}觉醒","失落的{p}{s}","{p}{p2}{s}","永恒{p}{s}","无尽{p}{s}"]
+  },
+  "搞笑": {
+    emoji: "😂",
+    prefixes: ["快乐","迷路","躺平","佛系","社恐","摸鱼","干饭","摆烂","咸鱼","划水"],
+    suffixes: ["大师","选手","冠军","专家","达人","小能手","代言人","继承者","本人","课代表"],
+    patterns: ["{p}{s}","职业{p}{s}","{p}界{s}","全网最{p}的人","不{p}就难受","一天不{p}浑身难受","{p}第一名","退役{p}{s}","{p}但没完全{p}","被迫营业的{p}{s}"]
+  },
+  "文艺": {
+    emoji: "🌿",
+    prefixes: ["晚","夏","秋","春","海","星","光","木","岛","林"],
+    suffixes: ["风","雨","信","歌","诗","屿","鲸","鸟","河","野"],
+    patterns: ["{p}天的{s}","给{s}的{p}安","{p}日{s}语","与{s}书","{p}{s}不惊","第三封{s}","{p}末{s}至","像{p}天的{s}","那年{p}{s}","{p}色{s}声"]
+  }
+};
+
+let selectedStyle = null;
+let count = 5;
+
+const grid = document.getElementById('styleGrid');
+const results = document.getElementById('results');
+const countDisplay = document.getElementById('countDisplay');
+
+Object.keys(STYLES).forEach(name => {
+  const btn = document.createElement('button');
+  btn.className = 'style-btn';
+  btn.dataset.style = name;
+  btn.setAttribute('aria-pressed', 'false');
+  btn.textContent = STYLES[name].emoji + ' ' + name;
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.style-btn').forEach(b => b.setAttribute('aria-pressed', 'false'));
+    btn.setAttribute('aria-pressed', 'true');
+    selectedStyle = name;
+  });
+  grid.appendChild(btn);
+});
+
+document.getElementById('countMinus').addEventListener('click', () => {
+  if (count > 1) { count--; countDisplay.textContent = count; }
+});
+document.getElementById('countPlus').addEventListener('click', () => {
+  if (count < 20) { count++; countDisplay.textContent = count; }
+});
+
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function generate(styleName, n) {
+  const s = STYLES[styleName];
+  const set = new Set();
+  let attempts = 0;
+  while (set.size < n && attempts < n * 20) {
+    const pattern = pick(s.patterns);
+    const name = pattern
+      .replace('{p2}', pick(s.prefixes))
+      .replace('{p}', pick(s.prefixes))
+      .replace(/\{p\}/g, pick(s.prefixes))
+      .replace('{s2}', pick(s.suffixes))
+      .replace('{s}', pick(s.suffixes))
+      .replace(/\{s\}/g, pick(s.suffixes));
+    set.add(name);
+    attempts++;
+  }
+  return [...set];
+}
+
+document.getElementById('generateBtn').addEventListener('click', () => {
+  if (!selectedStyle) {
+    selectedStyle = Object.keys(STYLES)[Math.floor(Math.random() * Object.keys(STYLES).length)];
+    document.querySelector(`[data-style="${selectedStyle}"]`).setAttribute('aria-pressed', 'true');
+  }
+  const names = generate(selectedStyle, count);
+  results.innerHTML = '';
+  names.forEach(name => {
+    const card = document.createElement('div');
+    card.className = 'name-card';
+
+    const text = document.createElement('span');
+    text.className = 'name-text';
+    text.textContent = name;
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copy-btn';
+    copyBtn.textContent = '复制';
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(name).then(() => {
+        copyBtn.textContent = '已复制';
+        copyBtn.classList.add('copied');
+        setTimeout(() => { copyBtn.textContent = '复制'; copyBtn.classList.remove('copied'); }, 1500);
+      }).catch(() => {
+        const range = document.createRange();
+        range.selectNodeContents(text);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      });
+    });
+
+    card.appendChild(text);
+    card.appendChild(copyBtn);
+    results.appendChild(card);
+  });
+});
+
+// Start with one generation
+document.querySelector('[data-style="可爱"]').click();
+document.getElementById('generateBtn').click();
+</script>
