@@ -397,6 +397,18 @@ button{background:none;border:0;cursor:pointer;padding:0}
 [data-deco] .code .hd span::before{content:"";display:inline-block;width:11px;height:11px;margin-right:5px;vertical-align:-1px;background:var(--motif) center/contain no-repeat}
 [data-deco] .fab::after{content:"";position:absolute;top:-6px;right:-4px;width:22px;height:22px;background:var(--motif2) center/contain no-repeat}
 [data-deco] .pv-in::after{content:"";position:absolute;left:-6px;top:-8px;width:16px;height:16px;background:var(--motif) center/contain no-repeat;transform:rotate(-20deg)}
+/* AI 的回复垫一层底色，背景图案和飘落的叶子、花瓣不会挡字；长按时颜色再深一点 */
+[data-deco] [data-b] > .msg.bot > .body{background-color:var(--panel);border-radius:10px;box-shadow:0 0 0 10px var(--panel)}
+[data-deco] [data-b] > .msg.bot > .mrow{margin-top:12px}
+[data-deco] [data-b] > .msg.bot > .body.held{background-color:var(--sunk);box-shadow:0 0 0 10px var(--sunk)}
+[data-deco] [data-b="line"] > .msg.bot > .body,[data-deco] [data-b="pill"] > .msg.bot > .body,
+[data-deco] [data-b="line"] > .msg.bot > .body.held,[data-deco] [data-b="pill"] > .msg.bot > .body.held{box-shadow:none}
+[data-deco] [data-b="pill"] > .msg.bot > .body{padding:10px 14px;border-radius:4px 12px 12px 4px}
+[data-deco] [data-b="tail"] > .msg.bot > .body{background-color:var(--pop);box-shadow:0 4px 14px -10px rgba(0,0,0,.25)}
+[data-deco] [data-b="paper"] > .msg.bot > .body{background-color:var(--field);box-shadow:0 1px 3px rgba(0,0,0,.08),0 8px 20px -14px rgba(0,0,0,.3)}
+[data-deco] [data-b="tail"] > .msg.bot > .mrow,[data-deco] [data-b="paper"] > .msg.bot > .mrow,[data-deco] [data-b="line"] > .msg.bot > .mrow,[data-deco] [data-b="pill"] > .msg.bot > .mrow{margin-top:3px}
+[data-deco] .msg.bot .body code.inl,[data-deco] .msg.bot .think,[data-deco] .msg.bot .body th{background-color:var(--sunk)}
+[data-deco] .msg.bot .code{background-color:var(--field)}
 /* 香芋紫：每个能填的地方都铺上小紫花 */
 [data-theme="taro"] .msg.user .body,[data-theme="taro"] .inner,[data-theme="taro"] .sheet,[data-theme="taro"] .cmenu,[data-theme="taro"] .code .hd,[data-theme="taro"] .think,[data-theme="taro"] .seg,[data-theme="taro"] .drawer .hd button,[data-theme="taro"] .blank button,[data-theme="taro"] .pv-in,[data-theme="taro"] .mchip,[data-theme="taro"] .sv-body,[data-theme="taro"] .npaper{background-image:var(--soft);background-size:120px 120px}
 [data-theme="taro"] [data-b="pill"] .msg.user .body{background-image:var(--soft),linear-gradient(135deg,var(--accent),var(--accent-hi));background-size:120px 120px,auto}
