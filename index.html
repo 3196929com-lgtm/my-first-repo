@@ -258,6 +258,8 @@ button{background:none;border:0;cursor:pointer;padding:0}
 .field textarea{resize:vertical;min-height:70px;line-height:1.6}
 .field .tip{font-size:12px;color:var(--ink-faint);margin-top:6px}
 .field .tip a{color:var(--accent)}
+.ttip{margin:-8px 0 16px;font-size:12px;color:var(--ink-faint);line-height:1.5}
+.ttip[hidden]{display:none}
 .tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
 .tabs button{border:1px solid var(--line);border-radius:20px;padding:6px 13px;font-size:13px;color:var(--ink-soft);background:var(--field)}
 .tabs button.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
@@ -726,6 +728,7 @@ button[data-tip]{-webkit-user-select:none;user-select:none}
         <div class="field"><div class="lrow"><label for="f-max">回复长度上限</label><button class="info" data-info="max" aria-label="说明"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.6v.4"/></svg></button></div><input type="number" id="f-max" min="256" max="64000" step="256"></div>
         <div class="field"><div class="lrow"><label for="f-temp">温度</label><button class="info" data-info="temp" aria-label="说明"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.6v.4"/></svg></button></div><input type="number" id="f-temp" min="0" max="2" step="0.1"></div>
       </div>
+      <div class="tip ttip" id="f-temptip" hidden></div>
     </div>
     <div id="pane-look" hidden>
       <div class="pv" aria-hidden="true">
@@ -814,7 +817,7 @@ const SPOTS=[[12,16,22,-12],[90,8,14,22],[148,36,18,38],[58,62,12,-30],[116,92,2
 const INFO={
   sys:"每次对话前都会先发给模型的设定，比如“用中文回答”“说话简短点”。所有对话共用。",
   max:"一条回复最多写多长，单位是 token（一个汉字大约 1～2 个 token）。设太小，回复会写到一半被截断。费用只按实际写了多少算，设大了不会多收钱。",
-  temp:"控制回答的随机程度：越低越稳定、越保守，越高越发散、越有创意。一般用 1 就行。Claude 最高只能到 1；OpenAI 的推理模型不能改温度，会自动忽略。",
+  temp:"控制回答的随机程度：越低越稳定、越保守，越高越发散、越有创意。一般用 1 就行。\nDeepSeek、Gemini：0～2。\n千问：0～2，但不能正好是 2，填 2 会按 1.99 发。\nClaude：现在的模型（5.x、Fable 这些）都不让改温度，这里填多少都不会发给它；更早的老模型最高 1。\nOpenAI：GPT-5 这类推理模型也不让改，同样不发。",
   sites:"打开联网后，模型只在这些网站里搜索。点网站名可以暂时停用，点 × 删除。全部停用就不限网站。"
 };
 const MEMO_HELP=[
@@ -1218,7 +1221,8 @@ async function build(c,extra,web){
       if(tx)parts.push({type:"text",text:tx});
       return {role:m.role,content:parts};
     });
-    const b={model,max_tokens:max,temperature:Math.min(1,temp),stream:true,messages:msgs};
+    const b={model,max_tokens:max,stream:true,messages:msgs};
+    if(claudeTemp(model))b.temperature=Math.min(1,temp);
     if(sys)b.system=sys;
     if(web){const t={type:"web_search_20250305",name:"web_search",max_uses:5},d=sites();if(d.length)t.allowed_domains=d;b.tools=[t];}
     req={url:a.url||P.u,headers:{"content-type":"application/json","x-api-key":a.key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:b};
@@ -1243,12 +1247,19 @@ async function build(c,extra,web){
     const b={model,messages:list,stream:true};
     // OpenAI 现在用 max_completion_tokens；推理模型（o 系列、gpt-5）不接受改温度
     if(p==="openai"){b.max_completion_tokens=max;if(!/^(o\d|gpt-5)/i.test(model))b.temperature=temp;}
-    else{b.max_tokens=max;b.temperature=temp;}
+    else{b.max_tokens=max;b.temperature=p==="qwen"?Math.min(1.99,temp):temp;}
     req={url:a.url||P.u,headers:{"content-type":"application/json","authorization":"Bearer "+a.key},body:b};
   }
   req.imgs=ids.some(id=>F[id]&&F[id].kind==="img");
   req.lost=ids.filter(id=>!F[id]).length;
   return req;
+}
+// Claude 能不能改温度：Opus 4.7 以后、Sonnet / Haiku 5 以后、Fable、Mythos 都不让改，传了非默认值会报错；更早的模型可以改，最高 1
+function claudeTemp(m){
+  const x=String(m).toLowerCase().match(/^claude-(opus|sonnet|haiku)-(\d+)(?:-(\d+))?/);
+  if(!x)return false;
+  const a=+x[2],b=x[3]&&x[3].length<3?+x[3]:0;   // claude-sonnet-4-20250514 这种，后面那段是日期
+  return a<4||(a===4&&!(x[1]==="opus"&&b>=7));
 }
 function why(status,detail,pname,x){
   const d=detail?"："+detail:"";x=x||{};
@@ -1648,15 +1659,23 @@ function loadTab(){
   $("#f-key").value=a.key||"";
   $("#f-model").value=a.model||"";
   $("#f-keytip").innerHTML=P.link?`<a href="${P.link}" target="_blank" rel="noopener">获取 ${P.n} 的 Key</a>`:"";
-  renderMChips();
+  renderMChips();tempTip();
+}
+// 有些模型不让改温度：在温度下面用小字说一声
+function tempTip(){
+  const t=$("#f-temptip"),m=$("#f-model").value.trim();
+  const s=tab==="anthropic"&&!claudeTemp(m)?"Claude 现在的模型不让改温度，上面填的温度对它不起作用，只对其他模型有效。"
+    :tab==="openai"&&/^(o\d|gpt-5)/i.test(m)?"这个 OpenAI 模型不让改温度，上面填的温度对它不起作用。"
+    :tab==="qwen"?"千问的温度不能正好是 2，填 2 会按 1.99 发。":"";
+  t.textContent=s;t.hidden=!s;
 }
 // 模型：可以直接输入，也可以点下面的常用模型
 function renderMChips(){
   const v=$("#f-model").value.trim();
   $("#f-mchips").innerHTML=PROV[tab].m.map(m=>`<button type="button" data-m="${m}" class="${m===v?"on":""}">${m}</button>`).join("");
 }
-$("#f-mchips").onclick=e=>{const b=e.target.closest("[data-m]");if(!b)return;$("#f-model").value=b.dataset.m;renderMChips();};
-$("#f-model").addEventListener("input",renderMChips);
+$("#f-mchips").onclick=e=>{const b=e.target.closest("[data-m]");if(!b)return;$("#f-model").value=b.dataset.m;renderMChips();tempTip();};
+$("#f-model").addEventListener("input",()=>{renderMChips();tempTip();});
 function stash(){
   const a=acct(tab);
   a.key=$("#f-key").value.trim();a.model=$("#f-model").value.trim();
