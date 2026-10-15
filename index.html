@@ -1628,7 +1628,7 @@ function setModel(c,p,m){
 function openSheet(pane){
   closeMenu();
   const c=cur();
-  acctSnap=JSON.stringify(accts);
+  acctSnap=JSON.stringify(accts);fixNote=[];
   tab=convPid(c);
   if(c&&c.model)acct(tab).model=c.model;   // 模型框里显示这个对话正在用的模型
   loadTab();
@@ -1720,19 +1720,35 @@ function addSite(){
 }
 $("#f-site-add").onclick=addSite;
 $("#f-site").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.isComposing){e.preventDefault();addSite();}});
+// 数字框：超出范围就改成能用的值，返回要提示的话
+function fixNum(el,lo,hi,def,name,int){
+  const v=el.value.trim();if(v==="")return "";
+  let n=+v;
+  if(!isFinite(n)){el.value=def;return name+"不是数字，已改回 "+def;}
+  if(int&&n!==Math.round(n)){n=Math.round(n);el.value=n;}
+  if(n>hi){el.value=hi;return `${name}最高 ${hi}，已改成 ${hi}`;}
+  if(n<lo){el.value=lo;return `${name}最低 ${lo}，已改成 ${lo}`;}
+  return "";
+}
+const fixTemp=()=>fixNum($("#f-temp"),0,2,1,"温度",false), fixMax=()=>fixNum($("#f-max"),256,64000,4096,"回复长度上限",true);
+// 改正过的提示先记着：直接点保存时，输入框失去焦点先改正，保存的提示里还要带上这句
+let fixNote=[];
+$("#f-temp").addEventListener("change",()=>{const m=fixTemp();if(m){fixNote.push(m);toast(m,3200);}});
+$("#f-max").addEventListener("change",()=>{const m=fixMax();if(m){fixNote.push(m);toast(m,3200);}});
 $("#f-save").onclick=()=>{
   stash();
+  const fixed=[...new Set([...fixNote,fixTemp(),fixMax()].filter(Boolean))];fixNote=[];
   if($("#f-site").value.trim())addSite();
   const c=cur(),a=acct(tab);
   pid=tab;
   if(c&&(c.pid!==tab||c.model!==a.model)){c.pid=tab;c.model=a.model;c.mt=Date.now();save();}
-  opt={...opt,sys:$("#f-sys").value,max:+$("#f-max").value||4096,temp:$("#f-temp").value===""?1:+$("#f-temp").value,sites:sitesDraft};
+  opt={...opt,sys:$("#f-sys").value,max:+$("#f-max").value||4096,temp:$("#f-temp").value.trim()===""?1:+$("#f-temp").value,sites:sitesDraft};
   accts.tavily={key:$("#f-tv").value.trim()};
   look={...lookDraft};lookDraft=null;acctSnap=null;
   S.set("c.pid",pid);J.set("c.accts",accts);J.set("c.opt",opt);J.set("c.look",look);
   applyLook(look);shut();updateChip();
   if(!c||!c.msgs.length)paint();
-  toast("已保存");
+  toast(fixed.length?"已保存。"+fixed.join("；"):"已保存",fixed.length?3600:0);
 };
 $("#f-cancel").onclick=()=>shut();
 $("#b-set").onclick=()=>openSheet("model");
@@ -2671,6 +2687,8 @@ $("#i-ok").onclick=()=>closeTo("info");
 /* ================= 启动 ================= */
 (function(){
   if(!PROV[pid])pid="gemini";
+  {const t=+opt.temp,m=Math.round(+opt.max);const t2=isFinite(t)?Math.max(0,Math.min(2,t)):1,m2=isFinite(m)&&m>0?Math.max(256,Math.min(64000,m)):4096;
+   if(t2!==opt.temp||m2!==opt.max){opt.temp=t2;opt.max=m2;J.set("c.opt",opt);}}
   if(!THEMES.some(t=>t[0]===look.theme))look.theme="classic";
   if(!BUBBLES.some(b=>b[0]===look.bubble))look.bubble="simple";
   if(!Array.isArray(notes))notes=[];
