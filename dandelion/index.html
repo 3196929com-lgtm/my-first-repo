@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>文字蒲公英</title>
+<meta name="description" content="把一段文字做成一朵蒲公英，点一下屏幕把它吹散。">
+<style>
+  :root {
+    color-scheme: light;
+    --sky-top: #1b4da6;
+    --sky-bottom: #4d9fda;
+    --ink: 255, 255, 255;
+    --ui: rgba(255, 255, 255, 0.62);
+    --card: rgba(255, 255, 255, 0.82);
+    --card-ink: #1a2750;
+    --muted: rgba(26, 39, 80, 0.64);
+    --field: rgba(255, 255, 255, 0.7);
+    --line: rgba(26, 39, 80, 0.22);
+    --pill-on: rgba(27, 36, 82, 0.13);
+    --btn: #1b2452;
+    --btn-ink: #ffffff;
+    --chip: rgba(255, 255, 255, 0.22);
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --sky-top: #060a24;
+      --sky-bottom: #1c2d68;
+      --ink: 246, 242, 232;
+      --ui: rgba(246, 242, 232, 0.55);
+      --card: rgba(12, 18, 50, 0.74);
+      --card-ink: #f3efe4;
+      --muted: rgba(243, 239, 228, 0.6);
+      --field: rgba(255, 255, 255, 0.07);
+      --line: rgba(243, 239, 228, 0.26);
+      --pill-on: rgba(243, 239, 228, 0.16);
+      --btn: #f3efe4;
+      --btn-ink: #0d1335;
+      --chip: rgba(255, 255, 255, 0.12);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --sky-top: #060a24;
+    --sky-bottom: #1c2d68;
+    --ink: 246, 242, 232;
+    --ui: rgba(246, 242, 232, 0.55);
+    --card: rgba(12, 18, 50, 0.74);
+    --card-ink: #f3efe4;
+    --muted: rgba(243, 239, 228, 0.6);
+    --field: rgba(255, 255, 255, 0.07);
+    --line: rgba(243, 239, 228, 0.26);
+    --pill-on: rgba(243, 239, 228, 0.16);
+    --btn: #f3efe4;
+    --btn-ink: #0d1335;
+    --chip: rgba(255, 255, 255, 0.12);
+  }
+  html {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-bottom) 100%);
+    scroll-padding-top: env(safe-area-inset-top, 0px);
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    position: relative;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: transparent;
+    font-family: "Songti SC", "Noto Serif CJK SC", "Noto Serif SC", "Source Han Serif SC", "STSong", "SimSun", "PingFang SC", "Microsoft YaHei", serif;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    outline: none;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  canvas:focus-visible { box-shadow: inset 0 0 0 2px rgba(var(--ink), 0.45); }
+
+  .hint {
+    position: absolute;
+    top: 50%;
+    left: calc(18px + env(safe-area-inset-left, 0px));
+    transform: translateY(-50%);
+    writing-mode: vertical-rl;
+    color: var(--ui);
+    font-size: 14px;
+    letter-spacing: 0.28em;
+    white-space: nowrap;
+    pointer-events: none;
+    transition: opacity 0.9s ease;
+  }
+  .hint.off { opacity: 0; }
+
+  .chip {
+    position: absolute;
+    top: 14px;
+    height: 36px;
+    padding: 0 15px;
+    border: 0;
+    border-radius: 18px;
+    background: var(--chip);
+    color: rgb(var(--ink));
+    font: inherit;
+    font-size: 14px;
+    letter-spacing: 0.12em;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: opacity 0.3s ease;
+  }
+  .chip:focus-visible { outline: 2px solid rgba(var(--ink), 0.7); outline-offset: 2px; }
+  .chip.off { opacity: 0; pointer-events: none; }
+  #editBtn { left: calc(14px + env(safe-area-inset-left, 0px)); }
+  #shareBtn { right: calc(14px + env(safe-area-inset-right, 0px)); }
+
+  .panel {
+    position: absolute;
+    left: 50%;
+    top: 9%;
+    transform: translateX(-50%);
+    width: min(92%, 420px);
+    max-height: 84%;
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 22px 22px 20px;
+    border-radius: 22px;
+    background: var(--card);
+    color: var(--card-ink);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 18px 50px rgba(0, 20, 60, 0.18);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+  }
+  .panel.off { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(8px); }
+  .panel h1 { margin: 0 36px 10px 0; font-size: 21px; font-weight: 400; letter-spacing: 0.22em; }
+  .panel p { margin: 0 0 14px; font-size: 13.5px; line-height: 1.75; color: var(--muted); }
+  .close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 38px;
+    height: 38px;
+    border: 0;
+    border-radius: 19px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 24px;
+    line-height: 38px;
+    cursor: pointer;
+  }
+  textarea {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    height: 118px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--field);
+    color: var(--card-ink);
+    font: inherit;
+    font-size: 16px;
+    line-height: 1.6;
+    resize: none;
+    outline: none;
+  }
+  textarea:focus { border-color: var(--card-ink); }
+  textarea::placeholder { color: var(--muted); opacity: 0.8; }
+  .count { margin: 8px 2px 16px; min-height: 1.4em; font-size: 12.5px; color: var(--muted); }
+  .label { margin-bottom: 10px; font-size: 15px; letter-spacing: 0.18em; }
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .modes button {
+    height: 44px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 15px;
+    letter-spacing: 0.12em;
+    cursor: pointer;
+  }
+  .modes button[aria-checked="true"] { background: var(--pill-on); border-color: var(--card-ink); color: var(--card-ink); }
+  .go {
+    width: 100%;
+    height: 50px;
+    border: 0;
+    border-radius: 15px;
+    background: var(--btn);
+    color: var(--btn-ink);
+    font: inherit;
+    font-size: 17px;
+    letter-spacing: 0.32em;
+    text-indent: 0.32em;
+    cursor: pointer;
+  }
+  .go:active { transform: scale(0.99); }
+  .panel button:focus-visible { outline: 2px solid var(--card-ink); outline-offset: 2px; }
+  .shake { animation: shake 0.4s; }
+  @keyframes shake {
+    20%, 60% { transform: translateX(-4px); }
+    40%, 80% { transform: translateX(4px); }
+  }
+  .toast {
+    position: absolute;
+    left: 50%;
+    bottom: 28px;
+    transform: translateX(-50%);
+    padding: 8px 16px;
+    border-radius: 16px;
+    background: var(--card);
+    color: var(--card-ink);
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+  .toast.on { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    .panel, .chip, .hint, .toast { transition: none; }
+    .shake { animation: none; }
+  }
+</style>
+</head>
+<body>
+<canvas id="c" tabindex="0" role="img" aria-label="一朵由文字组成的蒲公英，轻触或按空格键把它吹散"></canvas>
+<div class="hint off" id="hint">轻触吹散</div>
+<button class="chip off" id="editBtn" type="button">改字</button>
+<button class="chip off" id="shareBtn" type="button">分享</button>
+
+<section class="panel" id="panel" aria-label="输入你的文字">
+  <button class="close" id="closeBtn" type="button" aria-label="关闭">×</button>
+  <h1>输入你的文字</h1>
+  <p>一朵蒲公英能载 50 到 150 个字，每个字是一粒种子；不够 50 字会循环排布补满。生成后，点一下屏幕把它吹散；再点一下，风会更急。</p>
+  <textarea id="text" placeholder="想说的话、一首诗、一个名字……" spellcheck="false"></textarea>
+  <div class="count" id="count">每个字都是一粒种子</div>
+  <div class="label">飘散顺序</div>
+  <div class="modes" role="radiogroup" aria-label="飘散顺序">
+    <button type="button" role="radio" aria-checked="true" data-mode="wind">随风散开</button>
+    <button type="button" role="radio" aria-checked="false" data-mode="order">按文字顺序</button>
+  </div>
+  <button class="go" id="goBtn" type="button">生成蒲公英</button>
+</section>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  const FONT = '"Songti SC","Noto Serif CJK SC","Noto Serif SC","Source Han Serif SC","STSong","SimSun","PingFang SC","Microsoft YaHei",serif';
+  const TAU = Math.PI * 2;
+  const GOLDEN = Math.PI * (3 - Math.sqrt(5));
+  const WIND = -0.72;                      // 风向（弧度）：右上方
+  const HANG = Math.atan2(1.2, -0.45);     // 飘飞时茸丝下垂的方向
+  const MIN_CHARS = 50, MAX_CHARS = 150, FILL_TO = 100;
+  const REDUCE = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const SPIN = REDUCE ? 0.08 : 0.23;       // 自转角速度（弧度/秒）
+  const SWAY = REDUCE ? 0 : 1;             // 呼吸浮动幅度系数
+
+  const $ = id => document.getElementById(id);
+  const canvas = $('c'), ctx = canvas.getContext('2d');
+  const hint = $('hint'), panel = $('panel'), ta = $('text'), count = $('count'), toast = $('toast');
+  const editBtn = $('editBtn'), shareBtn = $('shareBtn'), closeBtn = $('closeBtn'), goBtn = $('goBtn');
+  const modeBtns = Array.from(document.querySelectorAll('.modes button'));
+
+  // ---------- 文字处理 ----------
+  const segmenter = (typeof Intl !== 'undefined' && Intl.Segmenter)
+    ? new Intl.Segmenter('zh', { granularity: 'grapheme' }) : null;
+  const toGraphemes = str => segmenter ? Array.from(segmenter.segment(str), x => x.segment) : Array.from(str);
+  const SKIP = /^[\s\p{P}\p{Z}\p{C}]+$/u;              // 空白、标点不算字
+  const cleanChars = str => toGraphemes(str).filter(g => !SKIP.test(g));
+  const fillCount = n => Math.ceil(FILL_TO / n) * n;
+
+  function prepareChars(str) {
+    let chars = cleanChars(str);
+    if (!chars.length) return null;
+    if (chars.length > MAX_CHARS) chars = chars.slice(0, MAX_CHARS);
+    if (chars.length < MIN_CHARS) {                     // 太少就整段循环补满
+      const unit = chars.slice();
+      while (chars.length < FILL_TO) chars = chars.concat(unit);
+    }
+    return chars;
+  }
+
+  function describe(str) {
+    const c = cleanChars(str).length;
+    if (c === 0) return '每个字都是一粒种子';
+    if (c < MIN_CHARS) return `已写 ${c} 字，会循环补到 ${fillCount(c)} 粒种子`;
+    if (c <= MAX_CHARS) return `已写 ${c} 字，${c} 粒种子`;
+    return `已写 ${c} 字，只取前 ${MAX_CHARS} 个`;
+  }
+
+  // ---------- 场景状态 ----------
+  let W = 0, H = 0, R = 90, cxBase = 0, cyBase = 0, cyTarget = 0, cx = 0, cy = 0;
+  let ink = '255, 255, 255';
+  let seeds = [], base = [], order = [], sizeMul = 1;
+  let mode = 'wind';
+  let phase = 'empty';         // empty → grow → idle → blowing → gone → grow …
+  let phaseT = 0, t = 0, last = 0;
+  let panelOpen = true;
+
+  const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
+  const easeOut = v => 1 - (1 - v) * (1 - v);
+  const easeOutBack = v => { const c = 1.70158; return 1 + (c + 1) * Math.pow(v - 1, 3) + c * Math.pow(v - 1, 2); };
+  const lerpAngle = (a, b, k) => a + (((((b - a + Math.PI) % TAU) + TAU) % TAU) - Math.PI) * k;
+  const rgba = a => `rgba(${ink}, ${clamp01(a)})`;
+
+  function readTheme() {
+    const v = getComputedStyle(document.documentElement).getPropertyValue('--ink').trim();
+    if (v) ink = v;
+  }
+
+  function resize() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    W = canvas.clientWidth; H = canvas.clientHeight;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    R = Math.max(64, Math.min(160, Math.min(W, H) * 0.24));
+    cxBase = W / 2;
+    cyTarget = H * (panelOpen ? 0.72 : 0.44);
+    cyBase = cyTarget;
+  }
+
+  // Fibonacci 球面：N 个字均匀铺在单位球上
+  function buildSeeds(chars) {
+    const N = chars.length;
+    base = [];
+    for (let i = 0; i < N; i++) {
+      const y = 1 - 2 * (i + 0.5) / N;
+      const r = Math.sqrt(1 - y * y);
+      const th = GOLDEN * i;
+      base.push({ x: Math.cos(th) * r, y, z: Math.sin(th) * r });
+    }
+    seeds = chars.map((ch, i) => ({
+      ch, i, attached: true, dead: false, releaseAt: Infinity, stag: Math.random() * 0.5,
+      sx: 0, sy: 0, z: 0, size: 12, alpha: 1, ang: 0,
+    }));
+    order = seeds.map((_, i) => i);
+    sizeMul = Math.min(1.45, Math.max(0.95, Math.sqrt(140 / N)));   // 字少就放大一点
+  }
+
+  // ---------- 风吹走 ----------
+  function startBlow(now) {
+    const att = seeds.filter(s => s.attached);
+    let list;
+    if (mode === 'order') {
+      list = att.slice().sort((a, b) => a.i - b.i);               // 按文字顺序
+    } else {                                                        // 迎风面先走，一波波推过去
+      const wx = Math.cos(WIND), wy = Math.sin(WIND);
+      list = att.map(s => ({ s, k: ((s.sx - cx) * wx + (s.sy - cy) * wy) / R + (Math.random() - 0.5) * 0.5 }))
+        .sort((a, b) => a.k - b.k).map(e => e.s);
+    }
+    const n = list.length;
+    const T = mode === 'order' ? 5.2 : 4.2, ex = mode === 'order' ? 0.7 : 0.5;
+    list.forEach((s, idx) => {
+      const u = n > 1 ? idx / (n - 1) : 1;
+      s.releaseAt = now + T * Math.pow(u, ex);                      // 先慢后快
+    });
+    phase = 'blowing';
+    hint.classList.add('off');
+  }
+
+  function gust(now) {       // 再点一下：一阵急风，剩下的很快散尽
+    for (const s of seeds) if (s.attached) s.releaseAt = Math.min(s.releaseAt, now + Math.random() * 0.8);
+  }
+
+  function release(s, now) {
+    s.attached = false; s.dead = false; s.t0 = now;
+    s.x = s.sx; s.y = s.sy;
+    s.size0 = s.size; s.sizeN = R * 0.17 * sizeMul;
+    s.alpha0 = s.alpha;
+    s.rot0 = s.ang; s.rotT = (Math.random() - 0.5) * 0.5;
+    s.fil0 = s.ang + Math.PI / 2;
+    const dx = s.sx - cx, dy = s.sy - cy, L = Math.hypot(dx, dy) || 1;
+    s.rdx = dx / L; s.rdy = dy / L;
+    s.filLen = Math.min(L * 0.7, R * 0.5);
+    s.life = 2.6 + Math.random() * 1.4;
+    s.angOff = (Math.random() - 0.5) * 0.55;
+    s.spdMul = 0.7 + Math.random() * 0.6;
+    s.ph = Math.random() * TAU;
+    s.rock = 0.1 + Math.random() * 0.18;
+    s.rot = s.rot0; s.fil = s.fil0; s.curAlpha = s.alpha0; s.curSize = s.size0;
+  }
+
+  function updateSeed(s, now, dt) {
+    const age = now - s.t0;
+    const sc = R / 100;
+    const k = Math.min(1, age / 1.1);
+    const spd = (45 + 210 * k * k) * s.spdMul * sc;
+    const g = Math.sin(now * 1.9 + s.ph) * 0.22 + Math.sin(now * 3.3 + s.ph * 1.7) * 0.12;
+    const a = WIND + s.angOff + g;
+    s.x += Math.cos(a) * spd * dt;
+    s.y += Math.sin(a) * spd * dt;
+    const lift = Math.max(0, 1 - age / 0.7);            // 刚脱落时先沿径向飘开
+    s.x += s.rdx * 60 * lift * sc * dt;
+    s.y += s.rdy * 60 * lift * sc * dt;
+    const m = easeOut(Math.min(1, age / 1.3));
+    const rock = Math.sin(now * 2.4 + s.ph) * s.rock * m;
+    s.rot = lerpAngle(s.rot0, s.rotT, m) + rock;
+    s.fil = lerpAngle(s.fil0, HANG, m) + rock * 0.6;
+    s.curSize = s.size0 + (s.sizeN - s.size0) * Math.min(1, age / 1.2);
+    let al = s.alpha0 + (1 - s.alpha0) * Math.min(1, age / 0.45);
+    const fs = s.life - 1.2;
+    if (age > fs) al *= Math.max(0, 1 - (age - fs) / 1.2);
+    s.curAlpha = al;
+    if (age >= s.life || s.x > W + 80 || s.y < -80 || s.x < -80 || s.y > H + 80) s.dead = true;
+  }
+
+  // ---------- 绘制 ----------
+  function drawStem() {
+    const bx = cxBase, by = H + 6;
+    ctx.strokeStyle = rgba(0.75);
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.quadraticCurveTo(bx + (cx - bx) * 0.25, cy + (by - cy) * 0.55, cx, cy);
+    ctx.stroke();
+  }
+
+  function drawRing() {      // 还没生成时，茎顶一个空的小圆
+    ctx.strokeStyle = rgba(0.6);
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(cx, cy, Math.max(6, R * 0.1), 0, TAU); ctx.stroke();
+  }
+
+  function drawCore() {
+    const r = Math.max(3, R * 0.07);
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, rgba(0.95));
+    g.addColorStop(0.45, rgba(0.35));
+    g.addColorStop(1, rgba(0));
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill();
+  }
+
+  function frame(ms) {
+    const now = ms / 1000;
+    const dt = Math.min(0.05, Math.max(0, now - last)); last = now; t += dt;
+    ctx.clearRect(0, 0, W, H);
+
+    // 面板打开时花头停在下方，关上后慢慢升到正位
+    cyTarget = H * (panelOpen ? 0.72 : 0.44);
+    cyBase += (cyTarget - cyBase) * (1 - Math.exp(-dt * 4));
+
+    // 呼吸 + 浮动
+    const breathe = 1 + 0.028 * SWAY * Math.sin(t * 1.15);
+    cx = cxBase + 5 * SWAY * Math.sin(t * 0.62);
+    cy = cyBase + 6 * SWAY * Math.sin(t * 0.85 + 1.3);
+    ctx.lineCap = 'round';
+
+    drawStem();
+    if (phase === 'empty') { drawRing(); requestAnimationFrame(frame); return; }
+
+    // 散尽后稍等片刻，重新长出来
+    let grow = 1, gp = 1;
+    if (phase === 'gone' && now - phaseT > 0.9) {
+      for (const s of seeds) { s.attached = true; s.dead = false; s.releaseAt = Infinity; s.stag = Math.random() * 0.5; }
+      phase = 'grow'; phaseT = now;
+    }
+    if (phase === 'grow') {
+      gp = Math.min(1, (now - phaseT) / 1.6);
+      grow = 0.12 + 0.88 * easeOutBack(gp);
+      if (gp >= 1) { phase = 'idle'; if (!panelOpen) hint.classList.remove('off'); }
+    }
+    const Rr = R * breathe * grow;
+
+    drawCore();
+
+    // 自转 + 透视投影
+    const ry = t * SPIN, rx = 0.42 + 0.1 * Math.sin(t * 0.27);
+    const cosY = Math.cos(ry), sinY = Math.sin(ry), cosX = Math.cos(rx), sinX = Math.sin(rx);
+    const f = 3.6;
+    for (const s of seeds) {
+      if (!s.attached) continue;
+      const b = base[s.i];
+      const x1 = b.x * cosY + b.z * sinY;
+      const z1 = -b.x * sinY + b.z * cosY;
+      const y2 = b.y * cosX - z1 * sinX;
+      const z2 = b.y * sinX + z1 * cosX;
+      const p = f / (f - z2);
+      s.sx = cx + x1 * Rr * p;
+      s.sy = cy - y2 * Rr * p;
+      s.z = z2;
+      const d = (z2 + 1) / 2;                                   // 0 远 … 1 近
+      s.size = R * (0.085 + 0.08 * d) * sizeMul * breathe * (0.6 + 0.4 * grow);
+      s.alpha = (0.15 + 0.85 * Math.pow(d, 1.6)) * (phase === 'grow' ? clamp01((gp - s.stag) / 0.5) : 1);
+      s.ang = Math.atan2(s.sy - cy, s.sx - cx) + Math.PI / 2;  // 字沿射线方向
+    }
+
+    // 到时间的种子脱落
+    if (phase === 'blowing') for (const s of seeds) if (s.attached && now >= s.releaseAt) release(s, now);
+
+    // 画花球：远的先画，近的盖在上面
+    order.sort((a, b) => seeds[a].z - seeds[b].z);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const idx of order) {
+      const s = seeds[idx];
+      if (!s.attached) continue;
+      const dx = s.sx - cx, dy = s.sy - cy, L = Math.hypot(dx, dy);
+      if (L > s.size * 1.3) {                                   // 茸丝
+        const ux = dx / L, uy = dy / L;
+        ctx.strokeStyle = rgba(s.alpha * 0.42);
+        ctx.lineWidth = 0.6 + 0.5 * (s.z + 1) / 2;
+        ctx.beginPath();
+        ctx.moveTo(cx + ux * Rr * 0.05, cy + uy * Rr * 0.05);
+        ctx.lineTo(s.sx - ux * s.size * 0.62, s.sy - uy * s.size * 0.62);
+        ctx.stroke();
+      }
+      ctx.save();
+      ctx.translate(s.sx, s.sy);
+      ctx.rotate(s.ang);
+      ctx.font = s.size.toFixed(1) + 'px ' + FONT;
+      ctx.fillStyle = rgba(s.alpha);
+      ctx.fillText(s.ch, 0, 0);
+      ctx.restore();
+    }
+
+    // 飘飞中的种子
+    let flying = 0, attached = 0;
+    for (const s of seeds) {
+      if (s.attached) { attached++; continue; }
+      if (s.dead) continue;
+      updateSeed(s, now, dt);
+      if (s.dead) continue;
+      flying++;
+      const sz = s.curSize;
+      const bx = s.x - Math.sin(s.rot) * sz * 0.6, by = s.y + Math.cos(s.rot) * sz * 0.6;   // 字的下端
+      ctx.strokeStyle = rgba(s.curAlpha * 0.45);
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx + Math.cos(s.fil) * s.filLen, by + Math.sin(s.fil) * s.filLen);
+      ctx.stroke();
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(s.rot);
+      ctx.font = sz.toFixed(1) + 'px ' + FONT;
+      ctx.fillStyle = rgba(s.curAlpha);
+      ctx.fillText(s.ch, 0, 0);
+      ctx.restore();
+    }
+
+    if (phase === 'blowing' && attached === 0 && flying === 0) { phase = 'gone'; phaseT = now; }
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- 面板 ----------
+  function setMode(m) {
+    mode = m;
+    modeBtns.forEach(b => b.setAttribute('aria-checked', b.dataset.mode === m ? 'true' : 'false'));
+  }
+
+  function openPanel() {
+    panelOpen = true;
+    panel.classList.remove('off');
+    editBtn.classList.add('off');
+    shareBtn.classList.add('off');
+    hint.classList.add('off');
+  }
+
+  function closePanel() {
+    panelOpen = false;
+    panel.classList.add('off');
+    editBtn.classList.remove('off');
+    shareBtn.classList.toggle('off', seeds.length === 0);
+    if (phase === 'idle') hint.classList.remove('off');
+  }
+
+  function generate() {
+    const chars = prepareChars(ta.value);
+    if (!chars) {
+      count.textContent = '先写点什么吧';
+      ta.classList.remove('shake'); void ta.offsetWidth; ta.classList.add('shake');
+      ta.focus();
+      return;
+    }
+    buildSeeds(chars);
+    phase = 'grow'; phaseT = performance.now() / 1000;
+    closePanel();
+    persist();
+  }
+
+  // 记住上次的文字；并把文字放进链接，发链接给别人打开就是这朵
+  function persist() {
+    const text = ta.value.trim();
+    try { localStorage.setItem('dandelion', JSON.stringify({ text, mode })); } catch (e) {}
+    try {
+      const p = new URLSearchParams(); p.set('t', text); p.set('m', mode);
+      history.replaceState(null, '', '#' + p.toString());
+    } catch (e) {}
+  }
+
+  function restore() {
+    let saved = null, fromHash = null;
+    try { saved = JSON.parse(localStorage.getItem('dandelion') || 'null'); } catch (e) {}
+    try {
+      const p = new URLSearchParams(location.hash.slice(1));
+      if (p.get('t')) fromHash = { text: p.get('t'), mode: p.get('m') };
+    } catch (e) {}
+    const init = fromHash || saved;
+    if (init && init.text) {
+      ta.value = init.text;
+      setMode(init.mode === 'order' ? 'order' : 'wind');
+    }
+    count.textContent = describe(ta.value);
+    if (fromHash) generate();            // 带着文字的链接：直接开花
+  }
+
+  let toastTimer = 0;
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('on'), 1800);
+  }
+
+  async function share() {
+    const url = location.href;
+    if (navigator.share) {
+      try { await navigator.share({ title: '文字蒲公英', text: ta.value.trim().slice(0, 40), url }); return; }
+      catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    try { await navigator.clipboard.writeText(url); showToast('链接已复制'); }
+    catch (e) { showToast('复制失败，请手动复制地址栏'); }
+  }
+
+  // ---------- 交互 ----------
+  function tap() {
+    const now = performance.now() / 1000;
+    if (phase === 'idle') startBlow(now);
+    else if (phase === 'blowing') gust(now);
+  }
+  canvas.addEventListener('pointerdown', () => { if (!panelOpen) tap(); });
+  window.addEventListener('keydown', e => {
+    if (panelOpen) return;
+    const tag = (e.target && e.target.tagName) || '';
+    if (tag === 'TEXTAREA' || tag === 'INPUT' || tag === 'BUTTON') return;
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); tap(); }
+  });
+  ta.addEventListener('input', () => { count.textContent = describe(ta.value); });
+  ta.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); generate(); }
+  });
+  modeBtns.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  goBtn.addEventListener('click', generate);
+  closeBtn.addEventListener('click', closePanel);
+  editBtn.addEventListener('click', openPanel);
+  shareBtn.addEventListener('click', share);
+  window.addEventListener('resize', resize);
+
+  readTheme();
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+  if (mq.addEventListener) mq.addEventListener('change', readTheme); else if (mq.addListener) mq.addListener(readTheme);
+  new MutationObserver(readTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  resize();
+  restore();
+  last = performance.now() / 1000;
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
