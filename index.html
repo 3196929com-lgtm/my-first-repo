@@ -530,6 +530,9 @@ button{background:none;border:0;cursor:pointer;padding:0}
 .site .sx svg{width:12px;height:12px;stroke:currentColor;stroke-width:2.2;fill:none;stroke-linecap:round}
 .site.off{border-color:var(--line);background-color:var(--field);color:var(--ink-faint)}
 .site.off>button:first-child{text-decoration:line-through}
+.site sup{font-size:11px;margin-left:1px;line-height:0}
+.sitetip{margin:-2px 0 10px!important}
+.sitetip[hidden]{display:none}
 .addsite{display:flex;gap:6px}
 .field .addsite input{flex:1;min-width:0;width:auto}
 .addsite .btn{padding:8px 14px;border:1px solid var(--line)}
@@ -747,6 +750,7 @@ button[data-tip]{-webkit-user-select:none;user-select:none}
       <div class="field">
         <div class="lrow"><span class="flabel">只搜这些网站</span><button class="info" data-info="sites" aria-label="说明"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.6v.4"/></svg></button></div>
         <div class="sites" id="sites"></div>
+        <div class="tip sitetip" id="f-sitetip" hidden></div>
         <div class="addsite"><input id="f-site" placeholder="添加网站，比如 zhihu.com" autocomplete="off" spellcheck="false" autocapitalize="off" enterkeyhint="done"><button class="btn ghost" id="f-site-add">添加</button></div>
         <div class="tip">点网站名可以暂时停用，点 × 删除；全部停用就不限网站。</div>
       </div>
@@ -845,6 +849,9 @@ let pid=S.get("c.pid")||"gemini";          // 最后一次用的服务商：新�
 let accts=J.get("c.accts",{});
 let opt=Object.assign({sys:"",max:4096,temp:1,memoAI:true},J.get("c.opt",{}));
 if(!Array.isArray(opt.sites))opt.sites=DEFAULT_SITES.map(d=>({d,on:true}));
+// 不让 Claude 搜索访问的网站：写进 Claude 的网站限制里，整个请求都会被拒，所以 Claude 联网时跳过它们（其他模型照常搜）
+const CLAUDE_NO=["stackoverflow.com"];
+if(!Array.isArray(opt.claudeNo))opt.claudeNo=CLAUDE_NO.slice();
 let convs=J.get("c.convs",[]);
 let curId=S.get("c.cur")||null;
 let dead=J.get("c.dead",{});
@@ -867,6 +874,7 @@ const thread=$("#thread"), scroll=$("#scroll"), input=$("#input");
 const acct=p=>(accts[p]=accts[p]||{key:"",model:(PROV[p]&&PROV[p].m[0])||"",url:PROV[p]?PROV[p].u:""});
 const tvKey=()=>(accts.tavily&&accts.tavily.key)||"";
 const sites=()=>opt.sites.filter(s=>s.on).map(s=>s.d);
+const claudeNo=d=>opt.claudeNo.some(b=>d===b||d.endsWith("."+b));
 const coarse=matchMedia("(pointer: coarse)").matches;
 
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
@@ -1212,7 +1220,7 @@ async function build(c,extra,web){
   // 文本文件直接当文字发；图片和 PDF 按各家的格式发
   const media=m=>m.att.map(id=>F[id]).filter(f=>f&&(f.kind==="img"||f.kind==="pdf"));
   const words=m=>m.att.map(id=>F[id]).filter(f=>f&&f.kind==="txt").map(f=>`【文件：${f.name}】\n${FENCE}\n${f.text}\n${FENCE}`).concat(m.text.trim()?[m.text]:[]).join("\n\n");
-  let req;
+  let req;const req0={};
   if(P.k==="anthropic"){
     const msgs=hist.map(m=>{
       const fs=media(m),tx=words(m);
@@ -1224,7 +1232,12 @@ async function build(c,extra,web){
     const b={model,max_tokens:max,stream:true,messages:msgs};
     if(claudeTemp(model))b.temperature=Math.min(1,temp);
     if(sys)b.system=sys;
-    if(web){const t={type:"web_search_20250305",name:"web_search",max_uses:5},d=sites();if(d.length)t.allowed_domains=d;b.tools=[t];}
+    if(web){
+      const d=sites(),ok=d.filter(x=>!claudeNo(x));
+      // 列出的网站 Claude 全都搜不了时，就不给它搜索（免得变成不限网站）
+      if(!d.length||ok.length){const t={type:"web_search_20250305",name:"web_search",max_uses:5};if(ok.length)t.allowed_domains=ok;b.tools=[t];}
+      else req0.noSearch=true;
+    }
     req={url:a.url||P.u,headers:{"content-type":"application/json","x-api-key":a.key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:b};
   }else if(P.k==="gemini"){
     const contents=hist.map(m=>{
@@ -1250,6 +1263,7 @@ async function build(c,extra,web){
     else{b.max_tokens=max;b.temperature=p==="qwen"?Math.min(1.99,temp):temp;}
     req={url:a.url||P.u,headers:{"content-type":"application/json","authorization":"Bearer "+a.key},body:b};
   }
+  Object.assign(req,req0);
   req.imgs=ids.some(id=>F[id]&&F[id].kind==="img");
   req.lost=ids.filter(id=>!F[id]).length;
   return req;
@@ -1276,13 +1290,20 @@ function why(status,detail,pname,x){
   return "请求失败 "+status+d;
 }
 /* 发一次请求，边收边交给 on 里的回调；on.cut() 返回 true 时提前停下（模型要翻便签或搜索） */
-async function streamOnce(c,extra,web,sig,on){
+async function streamOnce(c,extra,web,sig,on,again){
   const p=convPid(c),kind=PROV[p].k;
   const req=await build(c,extra,web);
   if(req.lost)on.lost(req.lost);
+  if(req.noSearch)on.blocked([]);
   const res=await fetch(req.url,{method:"POST",signal:sig,headers:req.headers,body:JSON.stringify(req.body)});
   if(!res.ok){
     let dt="";try{let e=await res.json();if(Array.isArray(e))e=e[0]||{};dt=(e.error&&(e.error.message||e.error.code))||e.message||"";}catch(_){}
+    // Claude：某个网站不让它的搜索访问 → 记下来，去掉它重新发一次
+    const bm=kind==="anthropic"&&web&&!again&&String(dt).match(/not accessible to our user agent:\s*\[([^\]]*)\]/i);
+    if(bm){
+      const ds=[...bm[1].matchAll(/['"]([^'"]+)['"]/g)].map(x=>normSite(x[1])).filter(Boolean);
+      if(ds.length){opt.claudeNo=[...new Set([...opt.claudeNo,...ds])];J.set("c.opt",opt);on.blocked(ds);return streamOnce(c,extra,web,sig,on,true);}
+    }
     throw new Error(why(res.status,String(dt||""),PROV[p].n,{img:req.imgs,web,kind}));
   }
   const blocks={};
@@ -1450,6 +1471,7 @@ async function reply(c){
       live();
     },
     lost:k=>{if(!warned){warned=true;toast(`有 ${k} 个附件在这台设备上找不到，没有发出去`);}},
+    blocked:ds=>toast(ds.length?`${ds.join("、")} 不让 Claude 的搜索访问，已经去掉它重新发了；其他模型还能搜`:"设置里的网站 Claude 都搜不了，这次没联网",4200),
     cut:()=>false
   };
   const finishSeg=()=>{if(segDone)return;segDone=true;const r=opt.memoAI?applyMemo(st.acc.slice(base),M):null;if(r)mergeRes(st.res,r);};
@@ -1703,7 +1725,10 @@ function normSite(v){
   return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(v)?v:"";
 }
 function renderSites(){
-  $("#sites").innerHTML=sitesDraft.map((s,i)=>`<span class="site${s.on?"":" off"}"><button data-st="${i}" aria-pressed="${s.on}">${esc(s.d)}</button><button class="sx" data-sx="${i}" aria-label="删除 ${esc(s.d)}">${SVG.x}</button></span>`).join("")||'<span class="tip">一个网站都没有：联网时不限网站</span>';
+  $("#sites").innerHTML=sitesDraft.map((s,i)=>`<span class="site${s.on?"":" off"}${claudeNo(s.d)?" nocl":""}"><button data-st="${i}" aria-pressed="${s.on}">${esc(s.d)}${claudeNo(s.d)?"<sup>*</sup>":""}</button><button class="sx" data-sx="${i}" aria-label="删除 ${esc(s.d)}">${SVG.x}</button></span>`).join("")||'<span class="tip">一个网站都没有：联网时不限网站</span>';
+  const no=sitesDraft.filter(s=>claudeNo(s.d)).map(s=>s.d);
+  $("#f-sitetip").textContent=no.length?`* ${no.join("、")} 不让 Claude 的搜索访问，Claude 联网时会跳过；其他模型照常能搜。`:"";
+  $("#f-sitetip").hidden=!no.length;
 }
 $("#sites").onclick=e=>{
   const t=e.target.closest("[data-st]"),x=e.target.closest("[data-sx]");
@@ -2007,7 +2032,7 @@ $("#file").onchange=e=>{
 $("#b-wipe").onclick=()=>{
   if(!confirm("会删掉这台设备上保存的所有 Key、聊天记录、便签和附件，无法恢复。继续？"))return;
   ["c.pid","c.accts","c.opt","c.convs","c.cur","c.dead","c.notes","c.ndead","c.groups","c.gdead","c.fold","c.mdot"].forEach(S.del);
-  accts={};opt={sys:"",max:4096,temp:1,memoAI:true,sites:DEFAULT_SITES.map(d=>({d,on:true}))};convs=[];curId=null;pid="gemini";dead={};notes=[];ndead={};groups=[];gdead={};fold={};
+  accts={};opt={sys:"",max:4096,temp:1,memoAI:true,sites:DEFAULT_SITES.map(d=>({d,on:true})),claudeNo:CLAUDE_NO.slice()};convs=[];curId=null;pid="gemini";dead={};notes=[];ndead={};groups=[];gdead={};fold={};
   pend=[];renderPend();wipeFiles();ensurePub();saveGroups();
   newConv();shut();memoDot(false);toast("已清空");
 };
