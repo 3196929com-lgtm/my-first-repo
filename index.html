@@ -531,6 +531,14 @@ button{background:none;border:0;cursor:pointer;padding:0}
 .site.off{border-color:var(--line);background-color:var(--field);color:var(--ink-faint)}
 .site.off>button:first-child{text-decoration:line-through}
 .site sup{font-size:11px;margin-left:1px;line-height:0}
+.onlyrow{margin-bottom:10px}
+.sw.mini{padding:0}
+.onlytip{margin:-2px 0 10px!important}
+.onlytip[hidden]{display:none}
+.sites.dim{opacity:.45}
+/* 对话列表：正在回复 / 有新回复 */
+.conv .cdot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:var(--accent)}
+.conv .cdot.run{animation:pulse 1.1s ease-in-out infinite}
 .sitetip{margin:-2px 0 10px!important}
 .sitetip[hidden]{display:none}
 .addsite{display:flex;gap:6px}
@@ -748,7 +756,8 @@ button[data-tip]{-webkit-user-select:none;user-select:none}
     </div>
     <div id="pane-web" hidden>
       <div class="field">
-        <div class="lrow"><span class="flabel">只搜这些网站</span><button class="info" data-info="sites" aria-label="说明"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.6v.4"/></svg></button></div>
+        <div class="lrow onlyrow"><label class="flabel" for="f-only">只搜这些网站</label><button class="info" data-info="sites" aria-label="说明"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.6v.4"/></svg></button><span class="grow"></span><label class="sw mini"><input type="checkbox" id="f-only" aria-label="只搜这些网站"><i></i></label></div>
+        <div class="tip onlytip" id="f-onlytip" hidden>现在不限网站：所有模型都全网搜。不让 Claude 访问的网站，Claude 还是搜不到。</div>
         <div class="sites" id="sites"></div>
         <div class="tip sitetip" id="f-sitetip" hidden></div>
         <div class="addsite"><input id="f-site" placeholder="添加网站，比如 zhihu.com" autocomplete="off" spellcheck="false" autocapitalize="off" enterkeyhint="done"><button class="btn ghost" id="f-site-add">添加</button></div>
@@ -822,7 +831,7 @@ const INFO={
   sys:"每次对话前都会先发给模型的设定，比如“用中文回答”“说话简短点”。所有对话共用。",
   max:"一条回复最多写多长，单位是 token（一个汉字大约 1～2 个 token）。设太小，回复会写到一半被截断。费用只按实际写了多少算，设大了不会多收钱。",
   temp:"控制回答的随机程度：越低越稳定、越保守，越高越发散、越有创意。一般用 1 就行。\nDeepSeek、Gemini：0～2。\n千问：0～2，但不能正好是 2，填 2 会按 1.99 发。\nClaude：现在的模型（5.x、Fable 这些）都不让改温度，这里填多少都不会发给它；更早的老模型最高 1。\nOpenAI：GPT-5 这类推理模型也不让改，同样不发。",
-  sites:"打开联网后，模型只在这些网站里搜索。点网站名可以暂时停用，点 × 删除。全部停用就不限网站。"
+  sites:"开关打开时，模型只在这些网站里搜索；关掉就不限网站，所有模型都全网搜（列表还留着，下次打开接着用）。点网站名可以暂时停用，点 × 删除。"
 };
 const MEMO_HELP=[
   ["公共","所有模型都能看到。"],
@@ -864,16 +873,20 @@ let look=J.get("c.look",null);
 if(!look){const old=S.get("c.theme");look={theme:(old==="dark"||(!old&&matchMedia("(prefers-color-scheme: dark)").matches))?"dark":"classic"};}
 look=Object.assign({theme:"classic",bubble:"simple",fx:true},look);
 let acctSnap=null;
-let busy=false, ctrl=null, userStop=false, sending=false, tab=pid, popKey=null, popPick=null, editing=null, lookDraft=null, sitesDraft=null, draft=null, gdraft=null, swallow=false;
+let busy=false, sending=false, onlyDraft=true, tab=pid, popKey=null, popPick=null, editing=null, lookDraft=null, sitesDraft=null, draft=null, gdraft=null, swallow=false;
 let lp=false, lpT=0, lpX=0, lpY=0, mT=0, mX=0, mY=0, pendingFlash=[];
 let follow=true, touching=false, lastTop=0;
 let pend=[];   // 输入框里还没发出去的附件
+const runs=new Map();      // 正在生成回复的对话：id → {ctrl, n, draw}；几个对话可以同时生成
+const fresh=new Set();     // 在后台回复完、还没打开看的对话
+const lastErr=new Map();   // 回复出错的对话：id → 出错原因（换到别的对话再回来也还在）
 
 const $=s=>document.querySelector(s);
 const thread=$("#thread"), scroll=$("#scroll"), input=$("#input");
 const acct=p=>(accts[p]=accts[p]||{key:"",model:(PROV[p]&&PROV[p].m[0])||"",url:PROV[p]?PROV[p].u:""});
 const tvKey=()=>(accts.tavily&&accts.tavily.key)||"";
-const sites=()=>opt.sites.filter(s=>s.on).map(s=>s.d);
+if(typeof opt.siteOnly!=="boolean")opt.siteOnly=true;
+const sites=()=>opt.siteOnly?opt.sites.filter(s=>s.on).map(s=>s.d):[];
 const claudeNo=d=>opt.claudeNo.some(b=>d===b||d.endsWith("."+b));
 const coarse=matchMedia("(pointer: coarse)").matches;
 
@@ -1073,10 +1086,17 @@ function save(){J.set("c.convs",convs);if(curId)S.set("c.cur",curId);}
 const convPid=c=>c&&PROV[c.pid]?c.pid:(PROV[pid]?pid:"gemini");
 const convModel=c=>(c&&c.model)||acct(convPid(c)).model||"";
 function newConv(){convs.unshift({id:uid(),title:"新对话",at:Date.now(),msgs:[],pid,model:acct(pid).model||""});curId=convs[0].id;save();paint();plist();input.focus();}
-function delConv(id){dead[id]=Date.now();J.set("c.dead",dead);convs=convs.filter(c=>c.id!==id);if(curId===id)curId=convs[0]?convs[0].id:null;if(!convs.length)newConv();else{save();paint();plist();}gcLater();}
+function delConv(id){const r=runs.get(id);if(r)r.ctrl.abort();fresh.delete(id);lastErr.delete(id);dead[id]=Date.now();J.set("c.dead",dead);convs=convs.filter(c=>c.id!==id);if(curId===id)curId=convs[0]?convs[0].id:null;if(!convs.length)newConv();else{save();paint();plist();}gcLater();}
 function plist(){
   const view=convs.filter(c=>c.pin).concat(convs.filter(c=>!c.pin));
-  $("#list").innerHTML=view.map(c=>`<div class="conv${c.id===curId?" on":""}" data-id="${esc(c.id)}">${c.pin?`<span class="pin">${SVG.pin}</span>`:""}<span class="t">${esc(c.title)}</span></div>`).join("");
+  $("#list").innerHTML=view.map(c=>`<div class="conv${c.id===curId?" on":""}" data-id="${esc(c.id)}">${c.pin?`<span class="pin">${SVG.pin}</span>`:""}<span class="t">${esc(c.title)}</span>${runs.has(c.id)?'<span class="cdot run" title="正在回复"></span>':fresh.has(c.id)?'<span class="cdot" title="有新回复"></span>':""}</div>`).join("");
+  $("#b-menu").classList.toggle("dot",[...fresh].some(id=>id!==curId));
+}
+const isRun=c=>!!c&&runs.has(c.id);
+function errNode(msg){
+  const n=node("assistant",esc(msg),"err");
+  n.insertAdjacentHTML("beforeend",`<div class="mrow"><button class="retry" data-retry="1">${SVG.regen}<span>重新发送</span></button></div>`);
+  return n;
 }
 function node(role,html,cls){
   const d=document.createElement("div");
@@ -1100,11 +1120,16 @@ function msgNode(m,i){
 function paint(){
   editing=null;
   const c=cur();
+  if(c)fresh.delete(c.id);
   $("#title").textContent=c?c.title:"";
-  updateChip();updateWeb();
-  if(!c||!c.msgs.length){thread.innerHTML=acct(convPid(c)).key?'<div class="hello" aria-hidden="true"></div>':'<div class="blank"><button id="go">填入 API Key</button></div>';showDown();return;}
-  thread.innerHTML="";
+  updateChip();updateWeb();updateSend();
+  const r=c&&runs.get(c.id),err=c&&lastErr.get(c.id);
+  if(!c||(!c.msgs.length&&!r)){thread.innerHTML=acct(convPid(c)).key?'<div class="hello" aria-hidden="true"></div>':'<div class="blank"><button id="go">填入 API Key</button></div>';showDown();return;}
+  thread.innerHTML="";follow=true;
   c.msgs.forEach((m,i)=>thread.appendChild(msgNode(m,i)));
+  // 这个对话还在生成：把正在写的那条接回来；之前出错了：把错误和「重新发送」也放回来
+  if(r){thread.appendChild(r.n);r.draw();}
+  else if(err&&c.msgs.length&&c.msgs[c.msgs.length-1].role==="user")thread.appendChild(errNode(err));
   hydrate(thread);
   requestAnimationFrame(()=>{scroll.scrollTop=scroll.scrollHeight;lastTop=scroll.scrollTop;showDown();});
 }
@@ -1134,7 +1159,7 @@ function renderFrom(c,i){
   for(let k=i;k<c.msgs.length;k++)thread.appendChild(msgNode(c.msgs[k],k));
   hydrate(thread);
 }
-const dropErr=()=>thread.querySelectorAll(".msg.err").forEach(x=>x.remove());
+const dropErr=()=>{thread.querySelectorAll(".msg.err").forEach(x=>x.remove());const c=cur();if(c)lastErr.delete(c.id);};
 /* 版本：编辑过的用户消息在 m.v 里存着每个版本（连同它后面的整段对话），m.vi 是当前显示的版本。
    当前版本那一格存 null，它的内容就是 m.content 和 c.msgs 里后面的消息 */
 function switchVer(c,i,j){
@@ -1417,7 +1442,8 @@ function ready(c){
   return true;
 }
 async function send(){
-  if(busy){userStop=true;if(ctrl)ctrl.abort();return;}
+  const cc=cur();
+  if(isRun(cc)){runs.get(cc.id).ctrl.abort();return;}
   if(sending)return;
   const text=input.value.trim();
   if(!text&&!pend.length)return;
@@ -1447,13 +1473,19 @@ async function send(){
 /* 按 c.msgs 请求一条新回复，流式显示在最后。
    模型要翻便签或联网搜索时，先停下来把结果发回去，再接着收，最多续 MAX_ROUNDS 次，都算同一条回复 */
 async function reply(c){
+  if(runs.has(c.id))return;
   const n=node("assistant",'<span class="caret"></span>'),body=n.querySelector(".body");
-  thread.appendChild(n);toBottom();setBusy(true);userStop=false;
+  const run={ctrl:new AbortController(),n,draw:()=>{}};
+  runs.set(c.id,run);lastErr.delete(c.id);
+  if(c===cur()){thread.appendChild(n);toBottom();}
+  updateSend();plist();
   const p=convPid(c),M=convModel(c),web=!!c.web,tv=web&&PROV[p].k!=="anthropic";
   const st={acc:"",thk:"",got:"",web:[],searching:false,res:{add:[],edit:[],del:0,bad:0,grp:0}};
   let raf=0,base=0,segDone=false,warned=false;
   const view=live=>(st.thk?`<div class="think">${esc(st.thk)}</div>`:"")+md(st.acc,live,st.web)+(live&&st.searching?`<span class="wchip pending">${SVG.globe}<span>正在搜索…</span></span>`:"");
-  const draw=()=>{if(!n.isConnected)return;body.innerHTML=view(true)+'<span class="caret"></span>';stick();showDown();};
+  // 换到别的对话时，这条不在页面上，只在后台接着收；切回来时 paint() 会把它接回去
+  const draw=()=>{if(!n.isConnected)return;body.innerHTML=view(true)+'<span class="caret"></span>';if(c===cur()){stick();showDown();}};
+  run.draw=draw;let ended="";
   const live=()=>{if(raf)return;raf=requestAnimationFrame(()=>{raf=0;draw();});};
   const halt=()=>{cancelAnimationFrame(raf);raf=0;};
   const on={
@@ -1479,26 +1511,26 @@ async function reply(c){
     const m={role:"assistant",content:st.acc.trim(),t:Date.now(),model:st.got||M};
     if(st.web.length)m.web=st.web.map(e=>{const o={q:e.q,o:e.o||0,r:(e.r||[]).map(x=>({t:x.t,u:x.u}))};if(e.err)o.err=e.err;return o;});
     const ids=[...st.res.add,...st.res.edit];if(ids.length)m.memo={ids};
-    c.msgs.push(m);c.at=Date.now();save();
-    if(n.isConnected)arm(n,c.msgs.length-1,m);else if(c===cur())paint();
+    c.msgs.push(m);c.at=Date.now();save();ended="ok";
+    if(n.isConnected)arm(n,c.msgs.length-1,m);
     memoToast(st.res);
   };
   const failed=msg=>{
+    ended="err";lastErr.set(c.id,msg);
     n.classList.add("err");body.innerHTML=esc(msg);
     n.insertAdjacentHTML("beforeend",`<div class="mrow"><button class="retry" data-retry="1">${SVG.regen}<span>重新发送</span></button></div>`);
   };
-  ctrl=new AbortController();
   const extra=[];
   try{
     for(let round=0;;round++){
       base=st.acc.length;segDone=false;
       on.cut=()=>{if(round>=MAX_ROUNDS)return false;const k=toolEnd(st.acc.slice(base),tv);if(k<0)return false;st.acc=st.acc.slice(0,base+k);return true;};
-      const r=await streamOnce(c,extra,web,ctrl.signal,on);
+      const r=await streamOnce(c,extra,web,run.ctrl.signal,on);
       finishSeg();
       if(!r.cut)break;
       halt();draw();
       const seg=st.acc.slice(base);
-      const out=await runTools(seg,c,tv,st,ctrl.signal,draw);
+      const out=await runTools(seg,c,tv,st,run.ctrl.signal,draw);
       extra.push({role:"assistant",text:seg},{role:"user",text:out});
       st.acc+="\n\n";
     }
@@ -1519,7 +1551,12 @@ async function reply(c){
       if(st.acc.trim()){finishSeg();body.innerHTML=view(false);keep();toast("回复中断了："+msg,4000);}
       else failed(msg);
     }
-  }finally{setBusy(false);ctrl=null;plist();showDown();}
+  }finally{
+    runs.delete(c.id);
+    // 在后台回复完的：列表里标个点，再提示一句
+    if(c!==cur()&&convs.includes(c)&&ended){fresh.add(c.id);toast(ended==="ok"?`「${c.title}」回复好了`:`「${c.title}」出错了，打开它可以重新发送`,3200);}
+    updateSend();plist();if(c===cur())showDown();
+  }
 }
 function mergeRes(a,b){a.add.push(...b.add);for(const x of b.edit)if(!a.edit.includes(x))a.edit.push(x);a.del+=b.del;a.bad+=b.bad;a.grp+=b.grp;}
 function memoToast(r){
@@ -1531,22 +1568,24 @@ function memoToast(r){
   if(!parts.length&&!r.bad)return;
   toast((parts.length?"便签已更新："+parts.join("，"):"便签没有改动")+(r.bad?`（${r.bad} 项没执行）`:""));
 }
-function setBusy(v){
-  busy=v;const b=$("#b-send");
-  b.classList.toggle("stop",v);b.disabled=false;
-  b.setAttribute("aria-label",v?"停止":"发送");
-  $("#ico").innerHTML=v?'<rect x="7" y="7" width="10" height="10" rx="2.5"/>':'<path d="M12 19V5M5 12l7-7 7 7"/>';
-  if(!v)grow();
+// 发送键：当前这个对话在生成时变成停止键（别的对话在生成不影响这里）
+function updateSend(){
+  busy=runs.size>0;
+  const on=isRun(cur()),b=$("#b-send");
+  b.classList.toggle("stop",on);
+  b.setAttribute("aria-label",on?"停止":"发送");
+  $("#ico").innerHTML=on?'<rect x="7" y="7" width="10" height="10" rx="2.5"/>':'<path d="M12 19V5M5 12l7-7 7 7"/>';
+  if(on)b.disabled=false;else grow();
 }
 function regen(i){
-  if(busy)return toast("先停止生成");
+  if(isRun(cur()))return toast("先停止生成");
   const c=cur(),u=c&&c.msgs[i-1];if(!u||u.role!=="user")return;
   if(!ready(c))return;
   closeEditor();branch(c,i-1,u.content);renderFrom(c,i-1);reply(c);
 }
 // 重新发送这条消息：后面已经有回复的话，旧的那段对话会保留成另一个版本
 function resend(i){
-  if(busy)return toast("先停止生成");
+  if(isRun(cur()))return toast("先停止生成");
   const c=cur(),m=c&&c.msgs[i];if(!m||m.role!=="user")return;
   if(!ready(c))return;
   closeEditor();dropErr();
@@ -1563,7 +1602,7 @@ function retry(){
 function grow(){
   input.style.height="auto";
   input.style.height=Math.min(input.scrollHeight,innerHeight*0.42)+"px";
-  if(!busy)$("#b-send").disabled=!input.value.trim()&&!pend.length;
+  if(!isRun(cur()))$("#b-send").disabled=!input.value.trim()&&!pend.length;
 }
 input.addEventListener("input",grow);
 input.addEventListener("keydown",e=>{
@@ -1575,7 +1614,7 @@ $("#b-web").onclick=()=>{
   const c=cur();if(!c)return;
   c.web=!c.web;save();updateWeb();
   if(!c.web)return toast("联网已关闭");
-  const d=sites().length?"，只搜设置里的 "+sites().length+" 个网站":"";
+  const d=sites().length?"，只搜设置里的 "+sites().length+" 个网站":"，不限网站";
   toast(PROV[convPid(c)].k==="anthropic"?"联网已打开：Claude 自带搜索，按次收费"+d:"联网已打开：通过 Tavily 搜索"+d,3200);
 };
 // 生成时你往上翻，就不再自动滚到底；翻回最底下又会接着跟
@@ -1657,6 +1696,7 @@ function openSheet(pane){
   $("#f-sys").value=opt.sys;$("#f-max").value=opt.max;$("#f-temp").value=opt.temp;
   lookDraft={...look};renderLook();
   sitesDraft=opt.sites.map(s=>({...s}));renderSites();
+  onlyDraft=opt.siteOnly;$("#f-only").checked=onlyDraft;paintOnly();
   $("#f-tv").value=tvKey();$("#f-site").value="";
   setPane(pane||"model");
   $("#sheet").classList.add("on");$("#mask").classList.add("on");
@@ -1744,6 +1784,11 @@ function addSite(){
   f.value="";renderSites();
 }
 $("#f-site-add").onclick=addSite;
+function paintOnly(){
+  $("#sites").classList.toggle("dim",!onlyDraft);
+  $("#f-onlytip").hidden=onlyDraft;
+}
+$("#f-only").onchange=e=>{onlyDraft=e.target.checked;paintOnly();};
 $("#f-site").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.isComposing){e.preventDefault();addSite();}});
 // 数字框：超出范围就改成能用的值，返回要提示的话
 function fixNum(el,lo,hi,def,name,int){
@@ -1767,7 +1812,7 @@ $("#f-save").onclick=()=>{
   const c=cur(),a=acct(tab);
   pid=tab;
   if(c&&(c.pid!==tab||c.model!==a.model)){c.pid=tab;c.model=a.model;c.mt=Date.now();save();}
-  opt={...opt,sys:$("#f-sys").value,max:+$("#f-max").value||4096,temp:$("#f-temp").value.trim()===""?1:+$("#f-temp").value,sites:sitesDraft};
+  opt={...opt,sys:$("#f-sys").value,max:+$("#f-max").value||4096,temp:$("#f-temp").value.trim()===""?1:+$("#f-temp").value,sites:sitesDraft,siteOnly:onlyDraft};
   accts.tavily={key:$("#f-tv").value.trim()};
   look={...lookDraft};lookDraft=null;acctSnap=null;
   S.set("c.pid",pid);J.set("c.accts",accts);J.set("c.opt",opt);J.set("c.look",look);
@@ -2031,8 +2076,9 @@ $("#file").onchange=e=>{
 };
 $("#b-wipe").onclick=()=>{
   if(!confirm("会删掉这台设备上保存的所有 Key、聊天记录、便签和附件，无法恢复。继续？"))return;
+  for(const r of runs.values())r.ctrl.abort();fresh.clear();lastErr.clear();
   ["c.pid","c.accts","c.opt","c.convs","c.cur","c.dead","c.notes","c.ndead","c.groups","c.gdead","c.fold","c.mdot"].forEach(S.del);
-  accts={};opt={sys:"",max:4096,temp:1,memoAI:true,sites:DEFAULT_SITES.map(d=>({d,on:true})),claudeNo:CLAUDE_NO.slice()};convs=[];curId=null;pid="gemini";dead={};notes=[];ndead={};groups=[];gdead={};fold={};
+  accts={};opt={sys:"",max:4096,temp:1,memoAI:true,sites:DEFAULT_SITES.map(d=>({d,on:true})),claudeNo:CLAUDE_NO.slice(),siteOnly:true};convs=[];curId=null;pid="gemini";dead={};notes=[];ndead={};groups=[];gdead={};fold={};
   pend=[];renderPend();wipeFiles();ensurePub();saveGroups();
   newConv();shut();memoDot(false);toast("已清空");
 };
@@ -2104,7 +2150,7 @@ function openMsgMenu(d){
 }
 // 删除这条及后面的所有消息
 function cutFrom(d,i){
-  if(busy)return toast("先停止生成");
+  if(isRun(cur()))return toast("先停止生成");
   const c=cur(),m=c&&c.msgs[i];if(!m)return;
   const n=c.msgs.length-i,vs=m.v?m.v.length-1:0;
   if(!confirm((n>1?`删除这条及后面的消息？共 ${n} 条`:"删除这条消息？")+(vs?`\n这条消息另外的 ${vs} 个版本也会一起删除`:"")))return;
@@ -2115,7 +2161,7 @@ function cutFrom(d,i){
 }
 /* 编辑：在原位置改，发送后生成一个新版本（附件保留） */
 function startEdit(d,i){
-  if(busy)return toast("先停止生成");
+  if(isRun(cur()))return toast("先停止生成");
   closeEditor();
   const c=cur(),m=c&&c.msgs[i];if(!m)return;
   editing={d,i};
@@ -2138,7 +2184,7 @@ function closeEditor(){
 }
 function submitEdit(){
   if(!editing)return;
-  if(busy)return toast("先停止生成");
+  if(isRun(cur()))return toast("先停止生成");
   const {d,i}=editing,c=cur(),m=c&&c.msgs[i];
   const text=d.querySelector(".ed").value.trim();
   if(!m||(!text&&!(m.att&&m.att.length))||!ready(c))return;
@@ -2190,7 +2236,7 @@ thread.addEventListener("click",e=>{
     else if(act==="cut")cutFrom(d,i);
     else if(act==="regen")regen(i);
     else{
-      if(busy)return toast("先停止生成");
+      if(isRun(cur()))return toast("先停止生成");
       closeEditor();switchVer(c,i,m.vi+(act==="next"?1:-1));renderFrom(c,i);
     }
     return;
