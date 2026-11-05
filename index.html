@@ -440,6 +440,7 @@ button{background:none;border:0;cursor:pointer;padding:0}
 .tb svg{width:16px;height:16px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
 .tb:hover{color:var(--ink);border-color:var(--ink-faint)}
 .tb[aria-pressed="true"]{color:var(--accent);border-color:var(--accent);background-color:var(--sel)}
+.tb[hidden]{display:none}
 .composer.drop .inner{border-color:var(--accent);box-shadow:0 0 0 3px var(--sel)}
 .pend{display:flex;flex-wrap:wrap;gap:8px;padding:6px 0 2px}
 .pend[hidden]{display:none}
@@ -631,6 +632,7 @@ button[data-tip]{-webkit-user-select:none;user-select:none}
       <div class="tools">
         <button class="tb" id="b-file" data-tip="发图片、PDF 或文本文件。图片：Claude、Gemini、OpenAI 都能看，DeepSeek、千问要选带视觉的模型。PDF：只有 Claude、Gemini、OpenAI 能读。之后每次发消息，前面的图片也会一起发过去，图片多了比较费额度。"><svg viewBox="0 0 24 24"><path d="M20.5 11.5l-8.2 8.2a5.3 5.3 0 0 1-7.5-7.5l8.6-8.6a3.5 3.5 0 0 1 5 5l-8.6 8.6a1.8 1.8 0 0 1-2.5-2.5l7.9-7.9"/></svg><span>文件</span></button>
         <button class="tb" id="b-web" aria-pressed="false" data-tip="打开后，模型可以去设置里列的那几个网站搜索，只对这个对话有效。Claude 用自带的搜索，按次收费；其他模型通过 Tavily 搜索。"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/></svg><span>联网</span></button>
+        <button class="tb" id="b-think" aria-pressed="false" hidden data-tip="思考深度（只对 Claude，只改这个对话）：越深回答越仔细，也越慢、越费额度，思考也按 token 算钱。选「高」以上会自动放宽回复长度上限，免得想到一半被截断。"><svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.5 1.1 1.3 1.1 2.1V16h5v-.1c0-.8.4-1.6 1.1-2.1A6 6 0 0 0 12 3z"/></svg><span id="think-t">思考</span></button>
         <span class="grow"></span>
         <button class="send" id="b-send" aria-label="发送"><svg viewBox="0 0 24 24" id="ico"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
       </div>
@@ -800,6 +802,8 @@ const PROV={
 const PDF_OK=["anthropic","gemini","openai"];
 const DEFAULT_SITES=["sspai.com","nodeseek.com","v2ex.com","linux.do","juejin.cn","segmentfault.com","cnblogs.com","github.com","stackoverflow.com"];
 const MAX_ROUNDS=4;      // 一条回复里最多自动续问几次（翻便签、搜索）
+// Claude 的思考深度（output_config.effort）
+const EFFORTS=[["low","低","想得少，快、省"],["medium","中",""],["high","高","想得仔细，慢一些"],["xhigh","超高","复杂的长任务用"],["max","最高","想得最久，最慢也最费"]];
 const MAX_FILES=8;
 
 /* ================= 外观 ================= */
@@ -1104,7 +1108,14 @@ function node(role,html,cls){
   d.innerHTML=`<div class="body">${html}</div>`;
   return d;
 }
-function updateChip(){const c=cur();$("#chip-t").textContent=convModel(c)||PROV[convPid(c)].n;}
+function updateChip(){const c=cur();$("#chip-t").textContent=convModel(c)||PROV[convPid(c)].n;updateThink();}
+function updateThink(){
+  const c=cur(),b=$("#b-think"),ok=c&&PROV[convPid(c)].k==="anthropic"&&effortsOf(convModel(c));
+  b.hidden=!ok;if(!ok)return;
+  const e=effortOf(c),it=EFFORTS.find(x=>x[0]===e);
+  b.setAttribute("aria-pressed",e?"true":"false");
+  $("#think-t").textContent=it?"思考 · "+it[1]:"思考";
+}
 function updateWeb(){const c=cur();$("#b-web").setAttribute("aria-pressed",c&&c.web?"true":"false");}
 function attHTML(att){
   if(!Array.isArray(att)||!att.length)return "";
@@ -1254,7 +1265,10 @@ async function build(c,extra,web){
       if(tx)parts.push({type:"text",text:tx});
       return {role:m.role,content:parts};
     });
-    const b={model,max_tokens:max,stream:true,messages:msgs};
+    const ef=effortOf(c);
+    // 思考也算在长度上限里：调到「高」以上时把上限放宽，免得想到一半被截断（只按实际用量收费）
+    const b={model,max_tokens:ef==="high"?Math.max(max,16000):ef==="xhigh"||ef==="max"?Math.max(max,32000):max,stream:true,messages:msgs};
+    if(ef)b.output_config={effort:ef};
     if(claudeTemp(model))b.temperature=Math.min(1,temp);
     if(sys)b.system=sys;
     if(web){
@@ -1300,6 +1314,26 @@ function claudeTemp(m){
   const a=+x[2],b=x[3]&&x[3].length<3?+x[3]:0;   // claude-sonnet-4-20250514 这种，后面那段是日期
   return a<4||(a===4&&!(x[1]==="opus"&&b>=7));
 }
+// 这个 Claude 模型能选哪些思考深度；不能调就返回 null
+function effortsOf(m){
+  m=String(m).toLowerCase();
+  const x=m.match(/^claude-(opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d+))?/),f=x?x[1]:(/^claude-mythos/.test(m)?"mythos":"");
+  if(!f)return null;
+  const v=x?+x[2]+(x[3]&&x[3].length<3?+x[3]/10:0):0;
+  let ok;
+  if(f==="fable"||f==="mythos")ok=v?["low","medium","high","xhigh","max"]:["low","medium","high","max"];
+  else if(f==="opus")ok=v>=4.7?["low","medium","high","xhigh","max"]:v>=4.6?["low","medium","high","max"]:v>=4.5?["low","medium","high"]:null;
+  else if(f==="sonnet")ok=v>=5?["low","medium","high","xhigh","max"]:v>=4.6?["low","medium","high","max"]:null;
+  else ok=v>=5.5?["low","medium","high","xhigh","max"]:null;
+  return ok;
+}
+// 不填时用的默认档：Opus 5.5 和 Haiku 5.5 是「中」，其他是「高」
+const effortDefault=m=>/^claude-(opus|haiku)-5-5/i.test(String(m))?"medium":"high";
+const noEffort=new Set();   // 接口说不支持思考深度的模型，这次打开网页期间不再发
+function effortOf(c){
+  const m=convModel(c),e=c&&c.think,ok=PROV[convPid(c)].k==="anthropic"&&effortsOf(m);
+  return ok&&e&&ok.includes(e)&&!noEffort.has(m)?e:"";
+}
 function why(status,detail,pname,x){
   const d=detail?"："+detail:"";x=x||{};
   if(status===401||status===403)return pname+" 的 API Key 不对、失效或没权限"+d;
@@ -1324,6 +1358,9 @@ async function streamOnce(c,extra,web,sig,on,again){
   if(!res.ok){
     let dt="";try{let e=await res.json();if(Array.isArray(e))e=e[0]||{};dt=(e.error&&(e.error.message||e.error.code))||e.message||"";}catch(_){}
     // Claude：某个网站不让它的搜索访问 → 记下来，去掉它重新发一次
+    if(kind==="anthropic"&&!again&&req.body.output_config&&res.status===400&&/effort|output_config/i.test(String(dt))){
+      noEffort.add(convModel(c));on.noEffort();return streamOnce(c,extra,web,sig,on,true);
+    }
     const bm=kind==="anthropic"&&web&&!again&&String(dt).match(/not accessible to our user agent:\s*\[([^\]]*)\]/i);
     if(bm){
       const ds=[...bm[1].matchAll(/['"]([^'"]+)['"]/g)].map(x=>normSite(x[1])).filter(Boolean);
@@ -1337,6 +1374,7 @@ async function streamOnce(c,extra,web,sig,on,again){
       if(ev.type==="message_start"&&ev.message&&typeof ev.message.model==="string")on.model(ev.message.model);
       else if(ev.type==="content_block_start"){
         const b=ev.content_block||{};blocks[ev.index]={type:b.type,json:""};
+        if(b.type==="thinking"||b.type==="redacted_thinking")on.thinkStart();
         if(b.type==="server_tool_use")on.sStart();
         else if(b.type==="web_search_tool_result")on.sResult(b.content);
         else if(b.type==="text"&&b.text)on.text(b.text);
@@ -1482,14 +1520,17 @@ async function reply(c){
   const p=convPid(c),M=convModel(c),web=!!c.web,tv=web&&PROV[p].k!=="anthropic";
   const st={acc:"",thk:"",got:"",web:[],searching:false,res:{add:[],edit:[],del:0,bad:0,grp:0}};
   let raf=0,base=0,segDone=false,warned=false;
-  const view=live=>(st.thk?`<div class="think">${esc(st.thk)}</div>`:"")+md(st.acc,live,st.web)+(live&&st.searching?`<span class="wchip pending">${SVG.globe}<span>正在搜索…</span></span>`:"");
+  const view=live=>(st.thk?`<div class="think">${esc(st.thk)}</div>`:"")+md(st.acc,live,st.web)+(live&&st.searching?`<span class="wchip pending">${SVG.globe}<span>正在搜索…</span></span>`:"")
+    +(live&&st.thinking&&!st.thk?`<span class="wchip pending">${SVG.spark}<span>正在思考…</span></span>`:"");
   // 换到别的对话时，这条不在页面上，只在后台接着收；切回来时 paint() 会把它接回去
   const draw=()=>{if(!n.isConnected)return;body.innerHTML=view(true)+'<span class="caret"></span>';if(c===cur()){stick();showDown();}};
   run.draw=draw;let ended="";
   const live=()=>{if(raf)return;raf=requestAnimationFrame(()=>{raf=0;draw();});};
   const halt=()=>{cancelAnimationFrame(raf);raf=0;};
   const on={
-    text:t=>{st.acc+=t;live();},
+    text:t=>{st.acc+=t;if(t)st.thinking=false;live();},
+    thinkStart:()=>{st.thinking=true;live();},
+    noEffort:()=>toast("这个模型不支持调思考深度，这次按默认发了",3200),
     think:t=>{st.thk+=t;live();},
     model:m=>{st.got=m;},
     // Claude 自带的搜索
@@ -1616,6 +1657,18 @@ $("#b-web").onclick=()=>{
   if(!c.web)return toast("联网已关闭");
   const d=sites().length?"，只搜设置里的 "+sites().length+" 个网站":"，不限网站";
   toast(PROV[convPid(c)].k==="anthropic"?"联网已打开：Claude 自带搜索，按次收费"+d:"联网已打开：通过 Tavily 搜索"+d,3200);
+};
+$("#b-think").onclick=()=>{
+  const c=cur(),b=$("#b-think");if(!c)return;
+  const m=convModel(c),ok=effortsOf(m)||[],e=effortOf(c),d=EFFORTS.find(x=>x[0]===effortDefault(m));
+  const items=[["",e===""?SVG.check:SVG.dot,"默认","",`交给模型自己定，${m.replace(/^claude-/,"")} 默认是「${d?d[1]:"高"}」`]]
+    .concat(EFFORTS.filter(x=>ok.includes(x[0])).map(x=>[x[0],x[0]===e?SVG.check:SVG.dot,x[1],x[0]===e?"cur":"",x[2]]));
+  items[0][3]=e===""?"cur":"";
+  openPop("think",b,"思考深度（只改这个对话）",items,b.getBoundingClientRect(),"left",v=>{
+    c.think=v;save();updateThink();
+    const it=EFFORTS.find(x=>x[0]===v);
+    toast(it?`这个对话的思考深度：${it[1]}`+(v==="high"||v==="xhigh"||v==="max"?"（会慢一些、费一些）":""):"思考深度改回默认");
+  });
 };
 // 生成时你往上翻，就不再自动滚到底；翻回最底下又会接着跟
 scroll.addEventListener("scroll",()=>{
@@ -2026,6 +2079,7 @@ $("#file").onchange=e=>{
       const clean={id:c.id,title:String(c.title||"未命名"),at:+c.at||0,mt:+c.mt||0,pin:c.pin===true,msgs:cleanMsgs(c.msgs,0)};
       if(PROV[c.pid]){clean.pid=c.pid;clean.model=typeof c.model==="string"?c.model.slice(0,100):"";}
       if(c.web===true)clean.web=true;
+      if(EFFORTS.some(x=>x[0]===c.think))clean.think=c.think;
       if(gone(clean))continue;
       const o=convs.find(x=>x.id===clean.id);
       if(!o){if(!clean.pid){clean.pid=pid;clean.model=acct(pid).model||"";}convs.push(clean);add++;continue;}
